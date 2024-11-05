@@ -35,8 +35,8 @@ class AutomaticPanoramic:
 
 
         # Step4 - Warp image to create panoramic image
-        # result = self.warp(img1, img2, H)
-        result = self.warp_api(img1, img2, H)
+        result = self.warp(img1, img2, H)
+        # result = self.warp_api(img1, img2, H)
         if self.save:
             cv2.imwrite(f"./output/{self.data1.split('/')[-1].split('.')[0]}_result.jpg", result)
         
@@ -151,10 +151,89 @@ class AutomaticPanoramic:
         print(f"ransac_api H : \n{H}")
         return H
 
+    def linear_blending(self, left_img, warp_img):
+       
+        hl, wl = left_img.shape[:2]
+        hr, wr = warp_img.shape[:2]
+        left_img_mask = np.zeros((hr, wr), dtype= int)
+        right_img_mask = np.zeros((hr, wr), dtype= int)
+
+        # get the left & right mask, and set the point which is non zero as 1
+        for i in range(hl):
+            for j in range(wl):
+                if np.count_nonzero(left_img[i, j]) > 0:
+                    left_img_mask[i, j] = 1
+        for i in range(hr):
+            for j in range(wr):
+                if np.count_nonzero(warp_img[i, j]) > 0:
+                    right_img_mask[i, j] = 1
+
+        # get the left & right overlapping region.
+        overlap_mask = np.zeros((hr, wr), dtype= int)
+        for i in range(hr):
+            for j in range(wr):
+                if left_img_mask[i, j] > 0 and right_img_mask[i, j] > 0:
+                    overlap_mask[i, j] = 1
+        
+        weight = np.zeros((hr, wr))
+        for i in range(hr):
+            # get start idx of width and end idx of width of the overlap region, 
+            start_overlap_idx = end_overlap_idx = - 1
+            for j in range(wr):
+                if overlap_mask[i, j] == 1 and start_overlap_idx == -1:
+                    start_overlap_idx = j
+                if overlap_mask[i, j] == 1:
+                    end_overlap_idx =j
+
+            # the pixel of this row are zero.
+            if start_overlap_idx == end_overlap_idx:
+                continue
+            
+            # calculate the ratio about the overlapping region
+            decrease_step = 1 / (end_overlap_idx - start_overlap_idx)
+            for j in range(start_overlap_idx, end_overlap_idx + 1):
+                weight[i, j] = 1 - (decrease_step * (j - start_overlap_idx))
+
+        # calculate the new image with weight.
+        linearBlending_img = np.copy(warp_img)
+        linearBlending_img[:hl, :wl] = np.copy(left_img)
+        for i in range(hr):
+            for j in range(wr):
+                if overlap_mask[i, j] > 0:
+                    linearBlending_img[i, j] = weight[i, j] * left_img[i, j] + (1 - weight[i, j]) * warp_img[i, j]
+        
+        return linearBlending_img
 
     '''Step4 - Warp image to create panoramic image'''
-    def warp(self):
-        pass
+    def warp(self, right_img, left_img, H, bledding= True):
+
+        hl, wl = left_img.shape[:2]
+        hr, wr = right_img.shape[:2]
+        warp_img = np.zeros((max(hl, hr), wl + wr, 3), dtype= int)
+        
+        if not bledding:
+            warp_img[:hl, :wl] = left_img
+
+        inv_H = np.linalg.inv(H)
+
+        for i in range(warp_img.shape[0]):
+            for j in range(warp_img.shape[1]):
+
+                coor = np.array([j, i, 1])
+                # matrix multiply
+                right_img_coor = inv_H @ coor 
+                right_img_coor /= right_img_coor[2]
+                y, x = int(round(right_img_coor[0])) , int(round(right_img_coor[1]))
+            
+                if x < 0 or x >= hr or y < 0 or y >= wr:
+                    continue
+
+                warp_img[i, j] = right_img[x, y]
+        
+        if bledding:
+            warp_img = self.linear_blending(left_img, warp_img)
+        
+        return warp_img
 
     def warp_api(self, img1, img2, H):
         total_width = img1.shape[1] + img2.shape[1]
