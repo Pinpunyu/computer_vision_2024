@@ -11,6 +11,7 @@ class AutomaticPanoramic:
         self.data2 = args.data2
         self.save = args.save
         self.ratio = args.ratio
+        self.feature = args.feature
         
 
     def run(self):
@@ -19,14 +20,14 @@ class AutomaticPanoramic:
         img2 = cv2.imread(self.data2)
 
         # Step1 - Interest points detection & feature description by SIFT
-        keypoint1, features1 = self.extract_keypoints_and_features(img1)
-        keypoint2, features2 = self.extract_keypoints_and_features(img2)
+        keypoint1, features1 = self.extract_keypoints_and_features(img1, self.feature)
+        keypoint2, features2 = self.extract_keypoints_and_features(img2, self.feature)
 
         # Step2 - Feature matching by SIFT features
         matches = self.feature_match(features1, features2, self.ratio)
         matched_img = self.visualize(img1, img2, keypoint1, keypoint2, matches)
         if self.save:
-            cv2.imwrite(f"./output/{self.data1.split('/')[-1].split('.')[0]}_matches.jpg", matched_img)
+            cv2.imwrite(f"./output/{self.data1.split('/')[-1].split('.')[0]}_{self.feature}_matches.jpg", matched_img)
         # plt.imshow(matched_img),plt.show()
 
         # Step3 - RANSAC to find homography matrix H
@@ -38,17 +39,33 @@ class AutomaticPanoramic:
         result = self.warp(img1, img2, H)
         # result = self.warp_api(img1, img2, H)
         if self.save:
-            cv2.imwrite(f"./output/{self.data1.split('/')[-1].split('.')[0]}_result.jpg", result)
+            cv2.imwrite(f"./output/{self.data1.split('/')[-1].split('.')[0]}_{self.feature}_result.jpg", result)
         
 
+    ''' Step1 - Interest points detection & feature description'''
+    def feature_description(self, feature):
 
-    ''' Step1 - Interest points detection & feature description by SIFT '''
-    def extract_keypoints_and_features(self, img):
+        if feature == 'sift':
+            feature_detector = cv2.SIFT_create()
+        elif feature == 'orb':
+            feature_detector = cv2.ORB_create()
+        elif feature == 'brisk':
+            feature_detector = cv2.BRISK_create()
+        elif feature == 'akaze':
+            feature_detector = cv2.AKAZE_create()
+        elif feature == 'kaze':
+            feature_detector = cv2.KAZE_create()
 
-        sift_detector = cv2.SIFT_create()
+        return feature_detector
+
+    def extract_keypoints_and_features(self, img, feature):
+
         grayscale = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        key_pts, features = sift_detector.detectAndCompute(grayscale, None)
-        points = np.float32([kp.pt for kp in key_pts])
+        feature_detector = self.feature_description(feature)
+        
+        keypoints, features = feature_detector.detectAndCompute(grayscale, None)
+        
+        points = np.float32([kp.pt for kp in keypoints]).reshape(-1, 2)
         return points, features
     
 
@@ -90,12 +107,15 @@ class AutomaticPanoramic:
 
 
     ''' Step3 - RANSAC to find homography matrix H '''
-    def homomat(self, points_in_img1, points_in_img2, matches, sample=4, iteration=2000, threshold=5.0):
+    def homomat(self, points_in_img1, points_in_img2, matches, sample=50, iteration=2000, threshold=5.0):
         points_in_img1 = np.float32([points_in_img1[i] for (_,i) in matches])
         points_in_img2 = np.float32([points_in_img2[i] for (i,_) in matches])
 
 
         num_points = points_in_img1.shape[0]
+        if num_points < sample:
+            raise ValueError(f"{self.feature} in {self.data1} matched point is not enough sample.")
+
         best_H = None
         best_inliers = 0
         for _ in tqdm(range(iteration), desc="Computing homography"):
@@ -123,7 +143,7 @@ class AutomaticPanoramic:
                 best_inliers = inliers
                 best_H = H
 
-        print(f"Best H: {best_H}")
+        print(f"Best H: \n{best_H}")
             
         return best_H
 
@@ -248,6 +268,7 @@ def parse_args():
     parse.add_argument('-d2', '--data2', default= "./data/hill1.JPG", type= str, help= 'path of image2')
     parse.add_argument('-s', '--save', default= False, type= bool, help= 'save image')
     parse.add_argument('-rl', '--ratio', default= 0.7, type= float, help= '')
+    parse.add_argument('-f', '--feature', default= "sift", type= str, help= 'choose different feature')
 
     args = parse.parse_args()
 
@@ -258,3 +279,15 @@ if __name__ == "__main__":
     args = parse_args()
     automatic_panoramic = AutomaticPanoramic(args)
     automatic_panoramic.run()
+
+    # Run all Images and Detectors
+    # image_paths = ['./data/hill2.JPG', './data/hill1.JPG', './data/S2.jpg', './data/S1.jpg', './data/TV2.jpg', './data/TV1.jpg']
+    # detectors = ['sift','orb','brisk','akaze','kaze']
+    # for detector in detectors:
+    #     for i in range(0,len(image_paths),2):
+    #         print(f"{detector} -{image_paths[i]}、{image_paths[i+1]}")
+    #         args.data1 = image_paths[i]
+    #         args.data2 = image_paths[i+1]
+    #         args.feature = detector
+    #         automatic_panoramic = AutomaticPanoramic(args)
+    #         automatic_panoramic.run()
