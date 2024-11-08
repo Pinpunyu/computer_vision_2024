@@ -36,7 +36,7 @@ class AutomaticPanoramic:
 
 
         # Step4 - Warp image to create panoramic image
-        result = self.warp(img1, img2, H)
+        result = self.warp(img1, img2, H, True)
         # result = self.warp_api(img1, img2, H)
         if self.save:
             cv2.imwrite(f"./output/{self.data1.split('/')[-1].split('.')[0]}_{self.feature}_result.jpg", result)
@@ -264,8 +264,8 @@ class AutomaticPanoramic:
 
 def parse_args():
     parse = argparse.ArgumentParser()
-    parse.add_argument('-d1', '--data1', default= "./data/hill2.JPG", type= str, help= 'path of image1')
-    parse.add_argument('-d2', '--data2', default= "./data/hill1.JPG", type= str, help= 'path of image2')
+    parse.add_argument('-d1', '--data1', default= "./my_data/desk2.jpg", type= str, help= 'path of image1')
+    parse.add_argument('-d2', '--data2', default= "./my_data/desk1.jpg", type= str, help= 'path of image2')
     parse.add_argument('-s', '--save', default= False, type= bool, help= 'save image')
     parse.add_argument('-rl', '--ratio', default= 0.7, type= float, help= '')
     parse.add_argument('-f', '--feature', default= "sift", type= str, help= 'choose different feature')
